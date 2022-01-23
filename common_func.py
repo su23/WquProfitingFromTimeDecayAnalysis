@@ -148,6 +148,10 @@ class TradingStrategy:
     def getOptionState(self):
         return self.__option_number
 
+    def show_balance(self):
+        print(self.__balance)
+        return self
+
     def simulate(self, max_days: int = 2000, trace: bool = False, show_plots: bool = False):
         t = time.process_time()
 
@@ -171,9 +175,11 @@ class TradingStrategy:
 
     def status(self):
         if self.__became_bankrupt:
-            print(f"{self.__asset_name} ({self.__strategy_name}): became bankrupt after {len(self.__balance)} days")
+            print(f"{self.__asset_name} ({self.__strategy_name}): became bankrupt after {self.__i} days. Balance {self.__balance[self.__i]}")
         else:
-            print(f"{self.__asset_name} ({self.__strategy_name}): winning strategy. Final balance {list(self.__balance)[-1]}")
+            print(f"{self.__asset_name} ({self.__strategy_name}): winning strategy. Final balance {self.__balance[self.__i]} after {self.__i} days")
+
+        return self
 
     def simulate_internal(self, call_puts, max_days, trace):
         for (_, call), (_, put) in call_puts:
