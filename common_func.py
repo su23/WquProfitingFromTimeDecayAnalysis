@@ -22,6 +22,8 @@ class DataLoader:
     def get_call_puts(self, depth: int):
         if depth == 2:
             return zip(self.__df_call_days[0].iterrows(), self.__df_put_days[0].iterrows(), self.__df_call_days[1].iterrows(), self.__df_put_days[1].iterrows())
+        elif depth == 3:
+            return zip(self.__df_call_days[0].iterrows(), self.__df_put_days[0].iterrows(), self.__df_call_days[1].iterrows(), self.__df_put_days[1].iterrows(), self.__df_call_days[2].iterrows(), self.__df_put_days[2].iterrows())
         else:
             return zip(self.__df_call_days[0].iterrows(), self.__df_put_days[0].iterrows())
 
