@@ -1,23 +1,90 @@
-from math import isnan
-from functools import total_ordering
-import calendar
-import zipfile
-import os
-import pandas as pd
-import datetime
-import matplotlib.pyplot as plt
-from datetime import datetime
 import datetime
 import time
-import asyncio
 import warnings
+import os
+
+import matplotlib.pyplot as plt
+import pandas as pd
+from pandas import DataFrame
 
 warnings.filterwarnings('ignore')
 
 
+class DataLoader:
+    __max_depth = 3
+    __df_call_days = [DataFrame] * __max_depth
+    __df_put_days = [DataFrame] * __max_depth
+    __tasks = []
+
+    def __init__(self, asset_name):
+        self.__asset_name = asset_name
+
+    def get_call_puts(self, depth: int):
+        if depth == 2:
+            return zip(self.__df_call_days[0].iterrows(), self.__df_put_days[0].iterrows(), self.__df_call_days[1].iterrows(), self.__df_put_days[1].iterrows())
+        else:
+            return zip(self.__df_call_days[0].iterrows(), self.__df_put_days[0].iterrows())
+
+    def load(self):
+        asset = self.__asset_name
+        all_is_ready = True
+        for i in range(0, self.__max_depth):
+            for option_type in ["call", "put"]:
+                if not os.path.isfile(f"grouped/{asset}_{option_type}_{i}.csv"):
+                    all_is_ready = False
+                    break
+
+        if all_is_ready:
+            t = time.process_time()
+            print(f"All files for {asset} are ready. Loading")
+            for i in range(0, self.__max_depth):
+                self.__df_call_days[i] = pd.read_csv(f'grouped/{asset}_call_{i}.csv')
+                self.__df_put_days[i] = pd.read_csv(f'grouped/{asset}_put_{i}.csv')
+            elapsed_time = time.process_time() - t
+            print(f"End loading in {elapsed_time} seconds")
+            return
+
+        print("Start loading")
+        t = time.process_time()
+        data = pd.read_csv(f'{asset}.csv', sep=",").filter(['UnderlyingPrice', 'Type', 'Expiration',
+                                                            'DataDate', 'Strike', 'Last', 'Bid', 'Ask', 'Volume',
+                                                            'OpenInterest', 'IV', 'Delta', 'Gamma',
+                                                            'Theta', 'Vega'])
+        data['Expiration'] = pd.to_datetime(data['Expiration'])
+        data['DataDate'] = pd.to_datetime(data['DataDate'])
+        data['Days'] = (data['Expiration'] - data['DataDate']).astype('timedelta64[D]').astype(int)
+        df_call = data.loc[data['Type'] == "call"].groupby(['DataDate', 'Days'])
+        df_put = data.loc[data['Type'] == "put"].groupby(['DataDate', 'Days'])
+
+        elapsed_time = time.process_time() - t
+        print(f"End loading in {elapsed_time} seconds")
+        # return df_call, df_put
+
+        for i in range(0, self.__max_depth):
+            self.__select_closest_dn_option_max_expiration_days(df_call, self.__df_call_days, "call", -0.5, i + 1)
+            self.__select_closest_dn_option_max_expiration_days(df_put, self.__df_put_days, "put", 0.5, i + 1)
+
+    def __select_closest_dn_option_max_expiration_days(self, df, target, option_type: str, delta: float = -0.5, best: int = 1):
+        print("Start grouping")
+        t = time.process_time()
+        begin = best - 1
+        # df2 = df.apply(lambda x: x.groupby('Days').apply(lambda g: g.iloc[(g['Delta'] + delta).abs().argsort()[begin:best]]))
+            #.groupby('DataDate')
+        df2 = df.apply(lambda g: g.iloc[(g['Delta'] + delta).abs().argsort()[begin:best]])
+
+        # max_expiration_days = df2.loc[df2['Days'].idxmax()]['Days']
+        # print(f'Max days option expiration is {max_expiration_days}')
+        elapsed_time = time.process_time() - t
+        print(f"Grouping processed in {elapsed_time} seconds")
+        # print(df2)
+        target[begin] = df2
+        df2.to_csv(f"grouped/{self.__asset_name}_{option_type}_{begin}.csv")
+
+
 class TradingStrategy:
-    __best_options_count = None
-    __asset_name = None
+    __loader: DataLoader = None
+    __best_options_count: int = None
+    __asset_name: str = None
     __min_expiration = 1
     __max_expiration = 15
     __balance = {0: .0}
@@ -30,25 +97,21 @@ class TradingStrategy:
     __i = 0
     __current_date = datetime.datetime.now()
 
-    def __init__(self, asset_name, best_options_count):
+    def __init__(self, loader: DataLoader, asset_name, best_options_count):
+        self.__loader = loader
         self.__asset_name = asset_name
         self.__best_options_count = best_options_count
 
     def simulate(self):
         t = time.process_time()
-        df_call, df_put = self.__load(self.__asset_name)
-        df_call_days = self.__select_closest_dn_option_max_expiration_days(df_call, -0.5)
-        df_put_days = self.__select_closest_dn_option_max_expiration_days(df_put, 0.5)
 
+        call_puts = self.__loader.get_call_puts(self.__best_options_count)
         if self.__best_options_count == 1:
-            call_puts = zip(df_call_days.iterrows(), df_put_days.iterrows())
             self.simulate_internal(call_puts, max_days=100, trace=False)
         elif self.__best_options_count == 2:
-            df_call_days2 = self.__select_closest_dn_option_max_expiration_days(df_call, -0.5, 2)
-            df_put_days2 = self.__select_closest_dn_option_max_expiration_days(df_put, 0.5, 2)
-            call_puts = zip(df_call_days.iterrows(), df_put_days.iterrows(), df_call_days2.iterrows(),
-                            df_put_days2.iterrows())
             self.simulate_internal2(call_puts, max_days=100, trace=False)
+        elif self.__best_options_count == 3:
+            self.simulate_internal3(call_puts, max_days=100, trace=False)
 
         self.__visualize()
         elapsed_time = time.process_time() - t
@@ -61,6 +124,10 @@ class TradingStrategy:
     def simulate_internal2(self, call_puts, max_days, trace):
         for (_, call), (_, put), (_, call2), (_, put2) in call_puts:
             self.__trading_strategy([call, call2], [put, put2], max_days, trace)
+
+    def simulate_internal3(self, call_puts, max_days, trace):
+        for (_, call), (_, put), (_, call2), (_, put2), (_, call3), (_, put3) in call_puts:
+            self.__trading_strategy([call, call2, put3], [put, put2, put3], max_days, trace)
 
     def __trading_strategy(self, calls: list, puts: list, max_days: int = 100, trace: bool = False):
         assert len(calls) > 0
@@ -135,29 +202,6 @@ class TradingStrategy:
         self.__delta_tracing[self.__i] = self.__delta_tracing[self.__i] - self.__calculate_delta_port(expired_today)
         self.__option_number[self.__i] = self.__option_number[self.__i] - len(expired_today)
         self.__balance[self.__i] = self.__balance[self.__i] + self.__should_execute(spot, expired_today, trace)
-
-    def __load(self, asset: str):
-        data = pd.read_csv(f'{asset}.csv', sep=",").filter(['UnderlyingPrice', 'Type', 'Expiration',
-                                                            'DataDate', 'Strike', 'Last', 'Bid', 'Ask', 'Volume',
-                                                            'OpenInterest', 'IV', 'Delta', 'Gamma',
-                                                            'Theta', 'Vega'])
-        data['Expiration'] = pd.to_datetime(data['Expiration'])
-        data['DataDate'] = pd.to_datetime(data['DataDate'])
-        df_call = data.loc[data['Type'] == "call"]
-        df_put = data.loc[data['Type'] == "put"]
-        return df_call, df_put
-
-    def __select_closest_dn_option_max_expiration_days(self, df, delta: float = -0.5, best: int = 1):
-        t = time.process_time()
-        begin = best - 1
-        df['Days'] = (df['Expiration'] - df['DataDate']).astype('timedelta64[D]').astype(int)
-        df2 = df.groupby('DataDate').apply(
-            lambda x: x.groupby('Days').apply(lambda g: g.iloc[(g['Delta'] + delta).abs().argsort()[begin:best]]))
-        # max_expiration_days = df2.loc[df2['Days'].idxmax()]['Days']
-        # print(f'Max days option expiration is {max_expiration_days}')
-        elapsed_time = time.process_time() - t
-        print(f"Grouping processed in {elapsed_time} seconds")
-        return df2
 
     def __remove_expired_options(self, portfolio_list: list, date: datetime.datetime):
         return list(filter(lambda x: x['Expiration'] != date, portfolio_list))

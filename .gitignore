@@ -2,6 +2,7 @@
 .idea/
 venv/
 .ipynb_checkpoints/
+grouped/
 
 # files
 *.csv
