@@ -231,18 +231,18 @@ class TradingStrategy:
             return
 
         if not self._is_strategy_valid(calls, puts):
-            #print(f"Is not valid")
             return
 
         total_delta = self._get_strategy_delta(calls, puts)
         #print(f"Total delta: {total_delta}")
         new_delta = self.__delta_tracing[self.__i] + total_delta
         if self.__max_delta < abs(new_delta):
-            # print(f"{new_delta} is far from {self.__max_delta}. Current delta is {self.__delta_tracing[self.__i]}")
-            if abs(new_delta) > abs(self.__delta_tracing[self.__i]):
-                return
+            #print(f"{new_delta} is far from {self.__max_delta}. Current delta is {self.__delta_tracing[self.__i]}")
+            #if abs(new_delta) > abs(self.__delta_tracing[self.__i]):
+            return
 
         self.__delta_tracing[self.__i] = new_delta
+        # print(f"Delta after new strategy {self.__delta_tracing[self.__i]}")
         self.__option_number[self.__i] += self._get_option_count()
 
         total_bid = .0
@@ -296,7 +296,11 @@ class TradingStrategy:
         expired_today_short = self.__get_expired_options(self.__portfolio_short_list, date)
         self.__portfolio_short_list = self.__remove_expired_options(self.__portfolio_short_list, date)
 
+        # if len(expired_today_short) > 0:
+        #     print(f"Delta before expiry {self.__delta_tracing[self.__i]}, {len(expired_today_short)} options")
         self.__delta_tracing[self.__i] -= self.__calculate_delta_port(expired_today_short)
+        # if len(expired_today_short) > 0:
+        #     print(f"Delta after expiry {self.__delta_tracing[self.__i]}")
         self.__option_number[self.__i] -= len(expired_today_short)
         self.__balance[self.__i] += self.__should_execute_short(spot, expired_today_short, trace)
 
