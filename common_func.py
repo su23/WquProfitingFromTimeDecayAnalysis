@@ -136,6 +136,7 @@ class TradingStrategy:
         self.__strategy_name = strategy_name
         self.__best_options_count = best_options_count
         self.__balance = {0: initial_balance}
+        self.__balance_total = {0: .0}
         self.__delta_tracing = {0: .0}
         self.__option_number = {0: 0}
         self.__portfolio_short_list = []
@@ -289,6 +290,7 @@ class TradingStrategy:
         self.__i += 1
 
         self.__balance[self.__i] = self.__balance[self.__i - 1]
+        self.__balance_total[self.__i - 1] = self.__balance[self.__i] - self.__calculate_short_portfolio() + self.__calculate_long_portfolio()
         self.__delta_tracing[self.__i] = self.__delta_tracing[self.__i - 1]
         self.__option_number[self.__i] = self.__option_number[self.__i - 1]
 
@@ -324,6 +326,20 @@ class TradingStrategy:
             delta_total += p['Delta']
 
         return delta_total
+
+    def __calculate_short_portfolio(self):
+        total = .0
+        for option in self.__portfolio_short_list:
+            total += option['Ask']
+
+        return total
+
+    def __calculate_long_portfolio(self):
+        total = .0
+        for option in self.__portfolio_long_list:
+            total += option['Bid']
+
+        return total
 
     def __should_execute_short(self, spot, expired_today, trace):
         total_minus = 0
@@ -370,6 +386,7 @@ class TradingStrategy:
     def __visualize(self):
         suffix = f"{self.__asset_name} ({self.__strategy_name})"
         self.__visualize2(self.__balance, f"Daily balance {suffix})")
+        self.__visualize2(self.__balance_total, f"Daily Total balance {suffix})")
         self.__visualize2(self.__delta_tracing, f"Daily delta {suffix})")
         self.__visualize2(self.__option_number, f"Daily portfolio option count {suffix})")
 
